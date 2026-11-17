@@ -56,27 +56,41 @@ class PhaseNineSixSecurityHardeningTest {
         assertTrue("Legacy SHA-256 hash must be flagged for transparent upgrade", PinSecurityHelper.needsRehash(legacyHex))
 
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = PreferencesRepository(context)
         val db = Room.inMemoryDatabaseBuilder(context, JuthoorDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         try {
             val repo = RoomGenealogyRepository(db)
-            val prefs = PreferencesRepository(context)
             val media = LocalMediaStorage(context)
             prefs.setPinLock(salt, legacyHex, enableBiometric = false)
 
             val viewModel = JuthoorViewModel(repo, prefs, media)
-            // Drain Dispatchers.Main so ViewModel init collects initial preferences
+            // Wait for DataStore -> viewModelScope initial preferences emission
+            var unlocked = false
+            val unlockDeadline = System.currentTimeMillis() + 5_000L
+            while (!unlocked && System.currentTimeMillis() < unlockDeadline) {
+                shadowOf(Looper.getMainLooper()).idle()
+                unlocked = viewModel.verifyAndUnlockWithPin("4826")
+                if (!unlocked) Thread.sleep(25)
+            }
+            assertTrue("Legacy SHA-256 PIN should unlock", unlocked)
+
+            // Wait for asynchronous viewModelScope + DataStore PBKDF2 upgrade commit
+            var updatedPrefs = prefs.preferencesFlow.first()
+            val rehashDeadline = System.currentTimeMillis() + 5_000L
+            while (updatedPrefs.pinHash == legacyHex && System.currentTimeMillis() < rehashDeadline) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(25)
+                updatedPrefs = prefs.preferencesFlow.first()
+            }
             shadowOf(Looper.getMainLooper()).idle()
 
-            assertTrue(viewModel.verifyAndUnlockWithPin("4826"))
-            shadowOf(Looper.getMainLooper()).idle()
-
-            val updatedPrefs = prefs.preferencesFlow.first()
             assertNotEquals("Legacy hash should have been upgraded", legacyHex, updatedPrefs.pinHash)
             assertTrue(updatedPrefs.pinHash.orEmpty().startsWith("pbkdf2_sha256$120000$"))
             assertFalse(PinSecurityHelper.needsRehash(updatedPrefs.pinHash))
         } finally {
+            runCatching { prefs.clearPinLock() }
             db.close()
         }
     }
@@ -84,18 +98,24 @@ class PhaseNineSixSecurityHardeningTest {
     @Test
     fun `viewmodel enforces brute force lockout after 5 consecutive failed pin attempts`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = PreferencesRepository(context)
         val db = Room.inMemoryDatabaseBuilder(context, JuthoorDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         try {
             val repo = RoomGenealogyRepository(db)
-            val prefs = PreferencesRepository(context)
             val media = LocalMediaStorage(context)
             val salt = PinSecurityHelper.generateSalt()
             val hash = PinSecurityHelper.hashPin("7531", salt)
             prefs.setPinLock(salt, hash, enableBiometric = false)
 
             val viewModel = JuthoorViewModel(repo, prefs, media)
+            // Wait until ViewModel uiState has collected loaded PIN preferences
+            val readyDeadline = System.currentTimeMillis() + 5_000L
+            while (!viewModel.uiState.value.preferences.pinEnabled && System.currentTimeMillis() < readyDeadline) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(25)
+            }
             shadowOf(Looper.getMainLooper()).idle()
 
             repeat(5) {
@@ -108,6 +128,7 @@ class PhaseNineSixSecurityHardeningTest {
                 viewModel.verifyAndUnlockWithPin("7531"),
             )
         } finally {
+            runCatching { prefs.clearPinLock() }
             db.close()
         }
     }
@@ -148,6 +169,7 @@ class PhaseNineSixSecurityHardeningTest {
         assertEquals(sampleSession.activeFamilyId, loaded?.activeFamilyId)
 
         store.clearSession()
+        store.updateActiveFamilyId(null)
         assertEquals(null, store.getSessionOnce())
     }
 

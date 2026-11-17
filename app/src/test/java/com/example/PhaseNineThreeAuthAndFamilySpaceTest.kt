@@ -414,6 +414,7 @@ class PhaseNineThreeAuthAndFamilySpaceTest {
         val authStore = AuthSessionStore(context)
         authStore.clearSession()
         authStore.updateActiveFamilyId(null)
+        prefs.clearPinLock()
         prefs.markOnboardingCompleted()
 
         val media = LocalMediaStorage(context)
