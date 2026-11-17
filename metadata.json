@@ -1,0 +1,6 @@
+{
+  "name": "جِذور",
+  "description": "نظام رقمي متكامل لإدارة شجرة العائلة وتوثيق الأنساب والزيجات والوثائق العائلية محلياً",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

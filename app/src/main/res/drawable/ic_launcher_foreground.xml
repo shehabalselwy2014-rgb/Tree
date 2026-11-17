@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Sweeping Root Anchors in Muted Heritage Gold -->
+    <path
+        android:pathData="M54,67 C47,75 37,78 27,74 M54,67 C61,75 71,78 81,74"
+        android:strokeColor="#D4AF37"
+        android:strokeWidth="4.0"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- Secondary Deep Root Arc -->
+    <path
+        android:pathData="M37,81 C46,85 62,85 71,81"
+        android:strokeColor="#D4AF37"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.72"
+        android:fillColor="#00000000" />
+
+    <!-- Clean Central Lineage Trunk & Spreading Genealogical Branches -->
+    <path
+        android:pathData="M54,67 L54,32 M54,53 C46,52 38,46 33,39 M54,53 C62,52 70,46 75,39 M54,42 C48,39 44,34 42,27 M54,42 C60,39 64,34 66,27"
+        android:strokeColor="#FAF8F4"
+        android:strokeWidth="3.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- Burgundy Heritage Seed at Trunk-Root Junction -->
+    <path
+        android:pathData="M54,67 m-4.6,0 a4.6,4.6 0 1,0 9.2,0 a4.6,4.6 0 1,0 -9.2,0"
+        android:fillColor="#9E2A35"
+        android:strokeColor="#FAF8F4"
+        android:strokeWidth="1.6" />
+
+    <!-- Crown Apex Node in Muted Gold -->
+    <path
+        android:pathData="M54,28 m-4.4,0 a4.4,4.4 0 1,0 8.8,0 a4.4,4.4 0 1,0 -8.8,0"
+        android:fillColor="#D4AF37"
+        android:strokeColor="#FAF8F4"
+        android:strokeWidth="1.4" />
+
+    <!-- Outer & Inner Generation Nodes -->
+    <path
+        android:pathData="M32,38 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0 M76,38 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0"
+        android:fillColor="#FAF8F4" />
+
+    <path
+        android:pathData="M42,26 m-2.9,0 a2.9,2.9 0 1,0 5.8,0 a2.9,2.9 0 1,0 -5.8,0 M66,26 m-2.9,0 a2.9,2.9 0 1,0 5.8,0 a2.9,2.9 0 1,0 -5.8,0"
+        android:fillColor="#D4AF37" />
+</vector>
