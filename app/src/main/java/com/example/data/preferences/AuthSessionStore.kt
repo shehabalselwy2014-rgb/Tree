@@ -28,17 +28,21 @@ class AuthSessionStore(private val context: Context) {
 
     val sessionFlow: Flow<AuthSession?> = context.juthoorAuthDataStore.data.map { prefs ->
         val userId = prefs[Keys.USER_ID]
-        val accessToken = prefs[Keys.ACCESS_TOKEN]
+        val rawAccessToken = prefs[Keys.ACCESS_TOKEN]
+        val accessToken = rawAccessToken?.let { SessionTokenCipher.decrypt(it) }
         val email = prefs[Keys.EMAIL]
         if (userId.isNullOrBlank() || accessToken.isNullOrBlank() || email.isNullOrBlank()) {
             null
         } else {
+            val refreshToken = prefs[Keys.REFRESH_TOKEN]
+                ?.let { SessionTokenCipher.decrypt(it) }
+                .orEmpty()
             AuthSession(
                 userId = userId,
                 email = email,
                 displayName = prefs[Keys.DISPLAY_NAME]?.takeIf { it.isNotBlank() } ?: email.substringBefore("@"),
                 accessToken = accessToken,
-                refreshToken = prefs[Keys.REFRESH_TOKEN].orEmpty(),
+                refreshToken = refreshToken,
                 expiresAtMillis = prefs[Keys.EXPIRES_AT] ?: 0L,
                 activeFamilyId = prefs[Keys.ACTIVE_FAMILY_ID]?.takeIf { it.isNotBlank() },
             )
@@ -52,12 +56,14 @@ class AuthSessionStore(private val context: Context) {
     suspend fun getSessionOnce(): AuthSession? = sessionFlow.first()
 
     suspend fun saveSession(session: AuthSession) {
+        val encAccess = SessionTokenCipher.encrypt(session.accessToken)
+        val encRefresh = SessionTokenCipher.encrypt(session.refreshToken)
         context.juthoorAuthDataStore.edit { prefs ->
             prefs[Keys.USER_ID] = session.userId
             prefs[Keys.EMAIL] = session.email
             prefs[Keys.DISPLAY_NAME] = session.displayName
-            prefs[Keys.ACCESS_TOKEN] = session.accessToken
-            prefs[Keys.REFRESH_TOKEN] = session.refreshToken
+            prefs[Keys.ACCESS_TOKEN] = encAccess
+            prefs[Keys.REFRESH_TOKEN] = encRefresh
             prefs[Keys.EXPIRES_AT] = session.expiresAtMillis
             if (!session.activeFamilyId.isNullOrBlank()) {
                 prefs[Keys.ACTIVE_FAMILY_ID] = session.activeFamilyId

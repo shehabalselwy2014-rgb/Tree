@@ -3,6 +3,7 @@ package com.example.data.backup
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
+import com.example.BuildConfig
 import com.example.data.local.JuthoorDatabase
 import com.example.data.local.entity.AuditLogEntity
 import com.example.data.local.entity.EducationEntity
@@ -52,7 +53,8 @@ class ZipBackupManager(
     companion object {
         const val FORMAT_VERSION = 1
         const val SUPPORTED_SCHEMA_VERSION = 2
-        const val APP_VERSION = "0.9.0"
+        val APP_VERSION: String
+            get() = BuildConfig.VERSION_NAME
         private const val ENTRY_MANIFEST = "manifest.json"
         private const val ENTRY_DATABASE = "database.json"
         private const val MAX_ENTRY_BYTES = 64L * 1024L * 1024L

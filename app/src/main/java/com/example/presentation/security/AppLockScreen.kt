@@ -162,8 +162,8 @@ fun AppLockScreen(
                 failedAttempts += 1
                 enteredPin = ""
                 if (failedAttempts >= 5) {
-                    cooldownSeconds = 15
-                    errorMessage = "تم إدخال رمز غير صحيح عدة مرات. انتظر 15 ثانية ثم أعد المحاولة."
+                    cooldownSeconds = 30
+                    errorMessage = "تم إدخال رمز غير صحيح عدة مرات. انتظر 30 ثانية ثم أعد المحاولة."
                 } else {
                     errorMessage = "رمز القفل غير صحيح (المحاولة $failedAttempts من 5)."
                 }

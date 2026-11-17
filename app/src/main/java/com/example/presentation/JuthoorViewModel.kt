@@ -838,11 +838,33 @@ class JuthoorViewModel(
 
     // ---- Phase 7: Privacy Lock (PIN & Biometric) ----
 
+    private var pinFailedAttempts: Int = 0
+    private var pinLockoutUntilMillis: Long = 0L
+
     fun verifyAndUnlockWithPin(candidatePin: String): Boolean {
+        val now = System.currentTimeMillis()
+        if (now < pinLockoutUntilMillis) {
+            return false
+        }
         val prefs = latestPreferences
         val ok = PinSecurityHelper.verifyPin(candidatePin, prefs.pinSalt, prefs.pinHash)
         if (ok) {
+            pinFailedAttempts = 0
+            pinLockoutUntilMillis = 0L
             isAppUnlockedState.value = true
+            if (PinSecurityHelper.needsRehash(prefs.pinHash)) {
+                viewModelScope.launch {
+                    val freshSalt = PinSecurityHelper.generateSalt()
+                    val upgradedHash = PinSecurityHelper.hashPin(candidatePin, freshSalt)
+                    preferencesRepository.setPinLock(freshSalt, upgradedHash, prefs.biometricEnabled)
+                }
+            }
+        } else {
+            pinFailedAttempts += 1
+            if (pinFailedAttempts >= 5) {
+                val multiplier = (pinFailedAttempts - 4).coerceAtMost(4)
+                pinLockoutUntilMillis = now + (30_000L * multiplier)
+            }
         }
         return ok
     }
