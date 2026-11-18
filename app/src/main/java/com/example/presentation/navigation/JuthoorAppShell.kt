@@ -438,6 +438,8 @@ private fun JuthoorMainShell(
                             },
                             onSyncNow = viewModel::syncNow,
                             onResolveConflict = viewModel::resolveSyncConflict,
+                            onSaveCloudConfig = viewModel::saveCustomCloudConfig,
+                            onClearCloudConfig = viewModel::clearCustomCloudConfig,
                         )
                     }
 

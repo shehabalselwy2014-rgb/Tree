@@ -14,6 +14,14 @@ import kotlinx.coroutines.flow.map
 
 private val Context.juthoorAuthDataStore: DataStore<Preferences> by preferencesDataStore(name = "juthoor_auth_session")
 
+data class CustomCloudEndpoint(
+    val url: String = "",
+    val anonKey: String = "",
+) {
+    val isPopulated: Boolean
+        get() = url.isNotBlank() && anonKey.isNotBlank()
+}
+
 class AuthSessionStore(private val context: Context) {
 
     private object Keys {
@@ -24,6 +32,8 @@ class AuthSessionStore(private val context: Context) {
         val REFRESH_TOKEN = stringPreferencesKey("auth_refresh_token")
         val EXPIRES_AT = longPreferencesKey("auth_expires_at")
         val ACTIVE_FAMILY_ID = stringPreferencesKey("auth_active_family_id")
+        val CUSTOM_SUPABASE_URL = stringPreferencesKey("custom_supabase_url")
+        val CUSTOM_SUPABASE_ANON_KEY = stringPreferencesKey("custom_supabase_anon_key")
     }
 
     val sessionFlow: Flow<AuthSession?> = context.juthoorAuthDataStore.data.map { prefs ->
@@ -53,7 +63,34 @@ class AuthSessionStore(private val context: Context) {
         prefs[Keys.ACTIVE_FAMILY_ID]?.takeIf { it.isNotBlank() }
     }
 
+    val customCloudEndpointFlow: Flow<CustomCloudEndpoint> = context.juthoorAuthDataStore.data.map { prefs ->
+        val url = prefs[Keys.CUSTOM_SUPABASE_URL]?.trim().orEmpty()
+        val anonKey = prefs[Keys.CUSTOM_SUPABASE_ANON_KEY]
+            ?.let { SessionTokenCipher.decrypt(it) }
+            ?.trim()
+            .orEmpty()
+        CustomCloudEndpoint(url = url, anonKey = anonKey)
+    }
+
     suspend fun getSessionOnce(): AuthSession? = sessionFlow.first()
+
+    suspend fun getCustomCloudEndpointOnce(): CustomCloudEndpoint = customCloudEndpointFlow.first()
+
+    suspend fun saveCustomCloudEndpoint(url: String, anonKey: String) {
+        val cleanUrl = url.trim().trimEnd('/')
+        val encAnonKey = SessionTokenCipher.encrypt(anonKey.trim())
+        context.juthoorAuthDataStore.edit { prefs ->
+            prefs[Keys.CUSTOM_SUPABASE_URL] = cleanUrl
+            prefs[Keys.CUSTOM_SUPABASE_ANON_KEY] = encAnonKey
+        }
+    }
+
+    suspend fun clearCustomCloudEndpoint() {
+        context.juthoorAuthDataStore.edit { prefs ->
+            prefs.remove(Keys.CUSTOM_SUPABASE_URL)
+            prefs.remove(Keys.CUSTOM_SUPABASE_ANON_KEY)
+        }
+    }
 
     suspend fun saveSession(session: AuthSession) {
         val encAccess = SessionTokenCipher.encrypt(session.accessToken)

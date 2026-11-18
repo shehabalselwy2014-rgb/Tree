@@ -2,6 +2,15 @@ package com.example
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.os.Looper
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.backup.ZipBackupManager
@@ -10,23 +19,29 @@ import com.example.data.media.LocalMediaStorage
 import com.example.data.preferences.AuthSessionStore
 import com.example.data.preferences.PreferencesRepository
 import com.example.data.preferences.SessionTokenCipher
+import com.example.data.remote.HttpSupabaseGateway
+import com.example.data.remote.SupabaseConfig
+import com.example.data.repository.RoomAndSupabaseAuthRepository
 import com.example.data.repository.RoomGenealogyRepository
 import com.example.domain.model.AuthSession
 import com.example.domain.security.PinSecurityHelper
 import com.example.presentation.JuthoorViewModel
-import kotlinx.coroutines.Dispatchers
+import com.example.presentation.cloud.FamilyAccountScreen
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import android.os.Looper
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import javax.crypto.KeyGenerator
@@ -34,6 +49,9 @@ import javax.crypto.KeyGenerator
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class PhaseNineSixSecurityHardeningTest {
+
+    @get:Rule
+    val composeTestRule = createComposeRule()
 
     @Test
     fun `pin security helper uses pbkdf2 120k iterations and upgrades legacy sha256 transparently`() = runTest {
@@ -193,6 +211,94 @@ class PhaseNineSixSecurityHardeningTest {
             val manifest = backupManager.exportBackupToStream(out).getOrThrow()
             assertEquals(BuildConfig.VERSION_NAME, manifest.appVersion)
         } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `custom supabase url and anon key can be saved in app ui to configure gateway dynamically`() = runTest {
+        assertNotNull(SupabaseConfig.validateInputs("", "valid-key-1234567890"))
+        assertNotNull(SupabaseConfig.validateInputs("ftp://bad.host", "valid-key-1234567890"))
+        assertNotNull(SupabaseConfig.validateInputs("https://YOUR_PROJECT_REF.supabase.co", "valid-key-1234567890"))
+        assertNotNull(SupabaseConfig.validateInputs("https://myproj.supabase.co", "short"))
+        assertNull(SupabaseConfig.validateInputs("https://myproj.supabase.co/", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.sample"))
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = PreferencesRepository(context)
+        val authStore = AuthSessionStore(context)
+        authStore.clearSession()
+        authStore.clearCustomCloudEndpoint()
+
+        val db = Room.inMemoryDatabaseBuilder(context, JuthoorDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val runtimeConfigState = MutableStateFlow(
+                SupabaseConfig(url = "https://YOUR_PROJECT_REF.supabase.co", anonKey = "YOUR_SUPABASE_ANON_KEY")
+            )
+            val gateway = HttpSupabaseGateway(configProvider = { runtimeConfigState.value })
+            assertFalse("Placeholder config should start unconfigured", gateway.isConfigured)
+
+            val repo = RoomGenealogyRepository(db, authStore)
+            val cloudRepo = RoomAndSupabaseAuthRepository(
+                database = db,
+                authSessionStore = authStore,
+                preferencesRepository = prefs,
+                supabaseGateway = gateway,
+                supabaseConfigState = runtimeConfigState,
+            )
+            val viewModel = JuthoorViewModel(
+                repository = repo,
+                preferencesRepository = prefs,
+                mediaStorage = LocalMediaStorage(context),
+                cloudAuthRepository = cloudRepo,
+            )
+
+            composeTestRule.setContent {
+                val state = viewModel.uiState.collectAsStateWithLifecycle().value
+                FamilyAccountScreen(
+                    uiState = state,
+                    onNavigateBack = {},
+                    onSignIn = viewModel::signInWithEmail,
+                    onSignUp = viewModel::signUpWithEmail,
+                    onSignOut = viewModel::signOutFromCloud,
+                    onCreateCloudFamilySpace = viewModel::createCloudFamilySpace,
+                    onRefreshFamilies = viewModel::refreshCloudFamilies,
+                    onSwitchActiveFamily = viewModel::switchActiveFamily,
+                    onSaveCloudConfig = viewModel::saveCustomCloudConfig,
+                    onClearCloudConfig = viewModel::clearCustomCloudConfig,
+                )
+            }
+            composeTestRule.waitUntil(timeoutMillis = 5_000) {
+                shadowOf(Looper.getMainLooper()).idle()
+                !viewModel.uiState.value.isLoading
+            }
+            composeTestRule.waitForIdle()
+
+            // Card should be expanded when backend is not configured
+            composeTestRule.onNodeWithTag("cloud_config_card").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("cloud_config_url_input").performScrollTo()
+                .performTextInput("https://my-family-tree.supabase.co/")
+            composeTestRule.onNodeWithTag("cloud_config_key_input").performScrollTo()
+                .performTextInput("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test_anon_key_value")
+            composeTestRule.onNodeWithTag("cloud_config_save_button")
+                .performScrollTo()
+                .assertIsEnabled()
+                .performClick()
+
+            val deadline = System.currentTimeMillis() + 5_000L
+            while (!viewModel.uiState.value.isCloudBackendConfigured && System.currentTimeMillis() < deadline) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(25)
+            }
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertTrue("Runtime gateway must now report configured", gateway.isConfigured)
+            assertTrue("UiState must reflect configured backend", viewModel.uiState.value.isCloudBackendConfigured)
+            assertEquals("https://my-family-tree.supabase.co", viewModel.uiState.value.configuredCloudUrl)
+            assertTrue(viewModel.uiState.value.hasCustomCloudConfig)
+        } finally {
+            runCatching { authStore.clearCustomCloudEndpoint() }
             db.close()
         }
     }

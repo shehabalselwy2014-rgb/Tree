@@ -16,12 +16,20 @@ import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class HttpSupabaseGateway(
-    private val config: SupabaseConfig,
+    private val configProvider: () -> SupabaseConfig,
     private val client: OkHttpClient = defaultOkHttpClient(),
 ) : SupabaseGateway {
 
+    constructor(
+        config: SupabaseConfig,
+        client: OkHttpClient = defaultOkHttpClient(),
+    ) : this({ config }, client)
+
+    private val currentConfig: SupabaseConfig
+        get() = configProvider()
+
     override val isConfigured: Boolean
-        get() = config.isConfigured
+        get() = currentConfig.isConfigured
 
     override suspend fun signUp(
         email: String,
@@ -35,7 +43,7 @@ class HttpSupabaseGateway(
                 put("password", password)
                 put("data", JSONObject().put("display_name", displayName.trim()))
             }
-            val request = baseRequest("${config.url}/auth/v1/signup", accessToken = null)
+            val request = baseRequest("${currentConfig.url}/auth/v1/signup", accessToken = null)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val bodyStr = executeJsonRequest(request)
@@ -58,7 +66,7 @@ class HttpSupabaseGateway(
                 put("email", email.trim())
                 put("password", password)
             }
-            val request = baseRequest("${config.url}/auth/v1/token?grant_type=password", accessToken = null)
+            val request = baseRequest("${currentConfig.url}/auth/v1/token?grant_type=password", accessToken = null)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val bodyStr = executeJsonRequest(request)
@@ -72,7 +80,7 @@ class HttpSupabaseGateway(
             val payload = JSONObject().apply {
                 put("refresh_token", refreshToken)
             }
-            val request = baseRequest("${config.url}/auth/v1/token?grant_type=refresh_token", accessToken = null)
+            val request = baseRequest("${currentConfig.url}/auth/v1/token?grant_type=refresh_token", accessToken = null)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val bodyStr = executeJsonRequest(request)
@@ -83,7 +91,7 @@ class HttpSupabaseGateway(
     override suspend fun signOut(accessToken: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             if (!isConfigured || accessToken.isBlank()) return@runCatching
-            val request = baseRequest("${config.url}/auth/v1/logout", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/auth/v1/logout", accessToken = accessToken)
                 .post("{}".toRequestBody(JSON_MEDIA))
                 .build()
             // Ignore non-fatal server errors on logout (e.g., already expired token)
@@ -107,7 +115,7 @@ class HttpSupabaseGateway(
                 put("display_name", displayName.trim().ifBlank { email.substringBefore("@") })
                 put("updated_at", now)
             }
-            val request = baseRequest("${config.url}/rest/v1/user_profiles", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/user_profiles", accessToken = accessToken)
                 .header("Prefer", "resolution=merge-duplicates,return=minimal")
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
@@ -131,7 +139,7 @@ class HttpSupabaseGateway(
                 put("p_motto", motto.trim())
                 put("p_root_person_id", rootPersonId ?: JSONObject.NULL)
             }
-            val request = baseRequest("${config.url}/rest/v1/rpc/create_family_space", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/create_family_space", accessToken = accessToken)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val obj = JSONObject(executeJsonRequest(request))
@@ -167,7 +175,7 @@ class HttpSupabaseGateway(
     ): Result<List<RemoteFamilyMembership>> = withContext(Dispatchers.IO) {
         runCatching {
             requireConfigured()
-            val request = baseRequest("${config.url}/rest/v1/rpc/get_my_family_memberships", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/get_my_family_memberships", accessToken = accessToken)
                 .post("{}".toRequestBody(JSON_MEDIA))
                 .build()
             val raw = executeJsonRequest(request).trim()
@@ -228,7 +236,7 @@ class HttpSupabaseGateway(
                 put("p_max_uses", maxUses)
                 put("p_expires_at", expiresAt)
             }
-            val request = baseRequest("${config.url}/rest/v1/rpc/create_family_invitation", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/create_family_invitation", accessToken = accessToken)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             parseInvitation(JSONObject(executeJsonRequest(request)))
@@ -242,7 +250,7 @@ class HttpSupabaseGateway(
         runCatching {
             requireConfigured()
             val payload = JSONObject().put("p_invitation_id", invitationId)
-            val request = baseRequest("${config.url}/rest/v1/rpc/revoke_family_invitation", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/revoke_family_invitation", accessToken = accessToken)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             executeJsonRequest(request)
@@ -257,7 +265,7 @@ class HttpSupabaseGateway(
         runCatching {
             requireConfigured()
             val payload = JSONObject().put("p_family_id", familyId)
-            val request = baseRequest("${config.url}/rest/v1/rpc/get_family_invitations", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/get_family_invitations", accessToken = accessToken)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val raw = executeJsonRequest(request).trim()
@@ -278,7 +286,7 @@ class HttpSupabaseGateway(
         runCatching {
             requireConfigured()
             val payload = JSONObject().put("p_invite_code", inviteCode.trim())
-            val request = baseRequest("${config.url}/rest/v1/rpc/accept_family_invitation", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/accept_family_invitation", accessToken = accessToken)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val obj = JSONObject(executeJsonRequest(request))
@@ -314,7 +322,7 @@ class HttpSupabaseGateway(
         runCatching {
             requireConfigured()
             val payload = JSONObject().put("p_family_id", familyId)
-            val request = baseRequest("${config.url}/rest/v1/rpc/get_family_members_with_profiles", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/get_family_members_with_profiles", accessToken = accessToken)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val raw = executeJsonRequest(request).trim()
@@ -353,7 +361,7 @@ class HttpSupabaseGateway(
                 put("p_can_manage_media", canManageMedia)
                 put("p_status", status.name)
             }
-            val request = baseRequest("${config.url}/rest/v1/rpc/update_family_member_link_and_role", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/update_family_member_link_and_role", accessToken = accessToken)
                 .post(payload.toString().toRequestBody(JSON_MEDIA))
                 .build()
             parseMemberProfile(JSONObject(executeJsonRequest(request)))
@@ -382,7 +390,7 @@ class HttpSupabaseGateway(
                 put("p_force_overwrite", forceOverwrite)
                 put("p_payload", parsedPayload)
             }
-            val request = baseRequest("${config.url}/rest/v1/rpc/sync_push_genealogy_mutation", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/sync_push_genealogy_mutation", accessToken = accessToken)
                 .post(body.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val obj = JSONObject(executeJsonRequest(request))
@@ -410,7 +418,7 @@ class HttpSupabaseGateway(
                 put("p_family_id", familyId)
                 put("p_since_updated_at", sinceUpdatedAt)
             }
-            val request = baseRequest("${config.url}/rest/v1/rpc/sync_pull_family_delta", accessToken = accessToken)
+            val request = baseRequest("${currentConfig.url}/rest/v1/rpc/sync_pull_family_delta", accessToken = accessToken)
                 .post(body.toString().toRequestBody(JSON_MEDIA))
                 .build()
             val raw = executeJsonRequest(request).ifBlank { "{}" }
@@ -432,8 +440,8 @@ class HttpSupabaseGateway(
             requireConfigured()
             val encodedPath = encodeStoragePath(objectKey)
             val request = Request.Builder()
-                .url("${config.url}/storage/v1/object/$STORAGE_BUCKET/$encodedPath")
-                .header("apikey", config.anonKey)
+                .url("${currentConfig.url}/storage/v1/object/$STORAGE_BUCKET/$encodedPath")
+                .header("apikey", currentConfig.anonKey)
                 .header("Authorization", "Bearer $accessToken")
                 .header("x-upsert", "true")
                 .post(bytes.toRequestBody(mimeType.toMediaType()))
@@ -451,8 +459,8 @@ class HttpSupabaseGateway(
             requireConfigured()
             val encodedPath = encodeStoragePath(objectKey)
             val request = Request.Builder()
-                .url("${config.url}/storage/v1/object/authenticated/$STORAGE_BUCKET/$encodedPath")
-                .header("apikey", config.anonKey)
+                .url("${currentConfig.url}/storage/v1/object/authenticated/$STORAGE_BUCKET/$encodedPath")
+                .header("apikey", currentConfig.anonKey)
                 .header("Authorization", "Bearer $accessToken")
                 .get()
                 .build()
@@ -474,16 +482,16 @@ class HttpSupabaseGateway(
     private fun requireConfigured() {
         if (!isConfigured) {
             throw IllegalStateException(
-                "الخادم السحابي غير مهيأ بعد. أضف SUPABASE_URL و SUPABASE_ANON_KEY في لوحة الأسرار (Secrets) بـ AI Studio."
+                "الخادم السحابي غير مهيأ بعد. أدخل رابط ومفتاح Supabase في «إعدادات الخادم السحابي» أسفل الصفحة، أو أضف SUPABASE_URL و SUPABASE_ANON_KEY عند البناء."
             )
         }
     }
 
     private fun baseRequest(url: String, accessToken: String?): Request.Builder {
-        val bearer = accessToken?.takeIf { it.isNotBlank() } ?: config.anonKey
+        val bearer = accessToken?.takeIf { it.isNotBlank() } ?: currentConfig.anonKey
         return Request.Builder()
             .url(url)
-            .header("apikey", config.anonKey)
+            .header("apikey", currentConfig.anonKey)
             .header("Authorization", "Bearer $bearer")
             .header("Accept", "application/json")
     }

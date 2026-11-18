@@ -74,6 +74,8 @@ data class JuthoorUiState(
     val isMaintenanceBusy: Boolean = false,
     val pendingBackupPreview: BackupPreview? = null,
     val isCloudBackendConfigured: Boolean = false,
+    val configuredCloudUrl: String? = null,
+    val hasCustomCloudConfig: Boolean = false,
     val authSession: AuthSession? = null,
     val activeFamilySpace: FamilySpace? = null,
     val familySpaces: List<FamilySpace> = emptyList(),
@@ -163,11 +165,20 @@ class JuthoorViewModel(
         )
     }
 
+    private val cloudConfigFlow = combine(
+        cloudAuthRepository?.isBackendConfiguredFlow ?: flowOf(false),
+        cloudAuthRepository?.configuredServerUrl ?: flowOf(null),
+        cloudAuthRepository?.hasCustomCloudConfigFlow ?: flowOf(false),
+    ) { configured, url, hasCustom ->
+        Triple(configured, url, hasCustom)
+    }
+
     private val cloudStateFlow = combine(
         cloudCoreFlow,
         cloudDetailsFlow,
         isSyncingState,
-    ) { core, details, isSyncing ->
+        cloudConfigFlow,
+    ) { core, details, isSyncing, (configured, url, hasCustom) ->
         core.copy(
             activeFamilyMembers = details.activeFamilyMembers,
             activeFamilyInvitations = details.activeFamilyInvitations,
@@ -175,6 +186,9 @@ class JuthoorViewModel(
             lastSyncedAtMillis = details.lastSyncedAtMillis,
             latestGeneratedInvite = details.latestGeneratedInvite,
             isSyncing = isSyncing,
+            isBackendConfigured = configured,
+            configuredServerUrl = url,
+            hasCustomCloudConfig = hasCustom,
         )
     }
 
@@ -246,7 +260,9 @@ class JuthoorViewModel(
             isAppUnlocked = if (prefs.pinEnabled) maint.isAppUnlocked else true,
             isMaintenanceBusy = maint.isMaintenanceBusy,
             pendingBackupPreview = maint.pendingBackupPreview,
-            isCloudBackendConfigured = cloudAuthRepository?.isBackendConfigured ?: false,
+            isCloudBackendConfigured = maint.cloud.isBackendConfigured,
+            configuredCloudUrl = maint.cloud.configuredServerUrl,
+            hasCustomCloudConfig = maint.cloud.hasCustomCloudConfig,
             authSession = maint.cloud.authSession,
             activeFamilySpace = maint.cloud.activeFamilySpace,
             familySpaces = maint.cloud.familySpaces,
@@ -296,6 +312,9 @@ class JuthoorViewModel(
         val latestGeneratedInvite: CreatedInvitationResult? = null,
         val pendingSyncCount: Int = 0,
         val isSyncing: Boolean = false,
+        val isBackendConfigured: Boolean = false,
+        val configuredServerUrl: String? = null,
+        val hasCustomCloudConfig: Boolean = false,
     )
 
     private data class MaintenanceBundle(
@@ -1068,6 +1087,36 @@ class JuthoorViewModel(
                     feedbackState.value = null to (err.message ?: "تعذر تجهيز ملف المشاركة.")
                 }
             isMaintenanceBusyState.value = false
+        }
+    }
+
+    fun saveCustomCloudConfig(url: String, anonKey: String) {
+        val repo = cloudAuthRepository ?: return
+        viewModelScope.launch {
+            isAuthBusyState.value = true
+            repo.saveCustomCloudConfig(url, anonKey)
+                .onSuccess {
+                    feedbackState.value = "تم حفظ وربط خادم Supabase السحابي بنجاح. يمكنك الآن إنشاء الحساب أو تسجيل الدخول." to null
+                }
+                .onFailure { err ->
+                    feedbackState.value = null to (err.message ?: "تعذر حفظ إعدادات الخادم السحابي.")
+                }
+            isAuthBusyState.value = false
+        }
+    }
+
+    fun clearCustomCloudConfig() {
+        val repo = cloudAuthRepository ?: return
+        viewModelScope.launch {
+            isAuthBusyState.value = true
+            repo.clearCustomCloudConfig()
+                .onSuccess {
+                    feedbackState.value = "تمت إزالة إعدادات الخادم اليدوية." to null
+                }
+                .onFailure { err ->
+                    feedbackState.value = null to (err.message ?: "تعذر مسح إعدادات الخادم السحابي.")
+                }
+            isAuthBusyState.value = false
         }
     }
 

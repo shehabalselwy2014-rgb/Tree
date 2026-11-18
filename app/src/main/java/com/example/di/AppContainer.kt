@@ -14,6 +14,7 @@ import com.example.data.repository.RoomAndSupabaseAuthRepository
 import com.example.data.repository.RoomGenealogyRepository
 import com.example.domain.repository.CloudAuthAndFamilyRepository
 import com.example.domain.repository.GenealogyRepository
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -38,12 +39,15 @@ class AppContainer(context: Context) {
         AuthSessionStore(appContext)
     }
 
-    val supabaseConfig: SupabaseConfig by lazy {
-        SupabaseConfig.fromBuildConfig()
+    private val runtimeSupabaseConfigState: MutableStateFlow<SupabaseConfig> by lazy {
+        MutableStateFlow(SupabaseConfig.fromBuildConfig())
     }
 
+    val supabaseConfig: SupabaseConfig
+        get() = runtimeSupabaseConfigState.value
+
     val supabaseGateway: SupabaseGateway by lazy {
-        HttpSupabaseGateway(supabaseConfig)
+        HttpSupabaseGateway(configProvider = { runtimeSupabaseConfigState.value })
     }
 
     val cloudAuthRepository: CloudAuthAndFamilyRepository by lazy {
@@ -53,6 +57,7 @@ class AppContainer(context: Context) {
             preferencesRepository = preferencesRepository,
             supabaseGateway = supabaseGateway,
             mediaStorage = mediaStorage,
+            supabaseConfigState = runtimeSupabaseConfigState,
         )
     }
 

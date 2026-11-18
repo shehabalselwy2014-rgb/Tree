@@ -14,6 +14,7 @@ import com.example.domain.model.MembershipStatus
 import com.example.domain.model.SyncConflict
 import com.example.domain.model.SyncCycleReport
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 interface CloudAuthAndFamilyRepository {
     val currentSession: Flow<AuthSession?>
@@ -26,6 +27,17 @@ interface CloudAuthAndFamilyRepository {
     val unresolvedConflicts: Flow<List<SyncConflict>>
     val lastSyncedAtMillis: Flow<Long?>
     val isBackendConfigured: Boolean
+    val isBackendConfiguredFlow: Flow<Boolean>
+        get() = flowOf(isBackendConfigured)
+    val configuredServerUrl: Flow<String?>
+        get() = flowOf(null)
+    val hasCustomCloudConfigFlow: Flow<Boolean>
+        get() = flowOf(false)
+
+    suspend fun saveCustomCloudConfig(url: String, anonKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("غير مدعوم"))
+
+    suspend fun clearCustomCloudConfig(): Result<Unit> = Result.success(Unit)
 
     suspend fun signUp(email: String, password: String, displayName: String): Result<AuthActionResult>
     suspend fun signIn(email: String, password: String): Result<AuthSession>

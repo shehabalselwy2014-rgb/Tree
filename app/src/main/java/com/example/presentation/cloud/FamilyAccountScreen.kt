@@ -21,8 +21,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FamilyRestroom
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -44,9 +47,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,11 +59,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.domain.model.ConflictResolutionChoice
 import com.example.domain.model.MultiUserDefaults
@@ -80,6 +87,8 @@ fun FamilyAccountScreen(
     onOpenFamilyMembers: () -> Unit = {},
     onSyncNow: () -> Unit = {},
     onResolveConflict: (String, ConflictResolutionChoice) -> Unit = { _, _ -> },
+    onSaveCloudConfig: (String, String) -> Unit = { _, _ -> },
+    onClearCloudConfig: () -> Unit = {},
 ) {
     var isSignUpMode by rememberSaveable { mutableStateOf(false) }
     var displayName by rememberSaveable { mutableStateOf("") }
@@ -87,6 +96,14 @@ fun FamilyAccountScreen(
     var password by rememberSaveable { mutableStateOf("") }
     var showPassword by rememberSaveable { mutableStateOf(false) }
     var inviteCodeInput by rememberSaveable { mutableStateOf("") }
+    var showConfigEditor by rememberSaveable(uiState.isCloudBackendConfigured) {
+        mutableStateOf(!uiState.isCloudBackendConfigured)
+    }
+    var customServerUrl by rememberSaveable(uiState.configuredCloudUrl) {
+        mutableStateOf(uiState.configuredCloudUrl.orEmpty())
+    }
+    var customAnonKey by rememberSaveable { mutableStateOf("") }
+    var showAnonKey by rememberSaveable { mutableStateOf(false) }
 
     var newFamilyName by rememberSaveable(uiState.preferences.familyTitle) {
         mutableStateOf(uiState.preferences.familyTitle)
@@ -167,13 +184,137 @@ fun FamilyAccountScreen(
                                 )
                                 Text(
                                     text = if (uiState.isCloudBackendConfigured) {
-                                        "جميع سجلاتك المحلية آمنة على جهازك، ويمكنك تسجيل الدخول وإنشاء مساحة العائلة السحابية."
+                                        val urlLabel = uiState.configuredCloudUrl?.let { "\nالخادم المتصل: $it" }.orEmpty()
+                                        "جميع سجلاتك المحلية آمنة على جهازك، ويمكنك تسجيل الدخول وإنشاء مساحة العائلة السحابية.$urlLabel"
                                     } else {
-                                        "لتفعيل الحسابات والمزامنة السحابية، أضف قيم SUPABASE_URL و SUPABASE_ANON_KEY في لوحة الأسرار (Secrets) بـ AI Studio. تبقى بيانات الشجرة المحلية محفوظة بالكامل."
+                                        "لتفعيل الحسابات والمزامنة السحابية، أدخل رابط ومفتاح مشروع Supabase في البطاقة أدناه مباشرة من هاتفك (أو أضفها عند البناء). تبقى بيانات الشجرة المحلية محفوظة بالكامل."
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("cloud_config_card"),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Key,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(
+                                        text = if (uiState.isCloudBackendConfigured) {
+                                            "إعدادات خادم Supabase السحابي"
+                                        } else {
+                                            "ربط خادم Supabase من الهاتف"
+                                        },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { showConfigEditor = !showConfigEditor },
+                                    modifier = Modifier.minimumInteractiveComponentSize().testTag("cloud_config_toggle_button"),
+                                ) {
+                                    Text(if (showConfigEditor) "إخفاء" else "تعديل")
+                                    Spacer(Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = if (showConfigEditor) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                        contentDescription = null,
+                                    )
+                                }
+                            }
+
+                            if (showConfigEditor) {
+                                Text(
+                                    text = "من لوحة Supabase افتح Project Settings ← API وانسخ Project URL و anon public key، ثم شغّل ترحيلات 0001..0006 في SQL Editor.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        OutlinedTextField(
+                                            value = customServerUrl,
+                                            onValueChange = { customServerUrl = it },
+                                            label = { Text("Supabase Project URL") },
+                                            placeholder = { Text("https://your-project.supabase.co") },
+                                            singleLine = true,
+                                            enabled = !uiState.isAuthBusy,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                                            modifier = Modifier.fillMaxWidth().testTag("cloud_config_url_input"),
+                                        )
+                                        OutlinedTextField(
+                                            value = customAnonKey,
+                                            onValueChange = { customAnonKey = it },
+                                            label = { Text("Supabase Anon Key") },
+                                            placeholder = { Text("eyJhbGciOi...") },
+                                            singleLine = true,
+                                            enabled = !uiState.isAuthBusy,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                                            visualTransformation = if (showAnonKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                            trailingIcon = {
+                                                IconButton(
+                                                    onClick = { showAnonKey = !showAnonKey },
+                                                    modifier = Modifier.minimumInteractiveComponentSize(),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (showAnonKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                                        contentDescription = if (showAnonKey) "إخفاء المفتاح" else "إظهار المفتاح",
+                                                    )
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth().testTag("cloud_config_key_input"),
+                                        )
+                                    }
+                                }
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            onSaveCloudConfig(customServerUrl, customAnonKey)
+                                        },
+                                        enabled = !uiState.isAuthBusy &&
+                                            customServerUrl.isNotBlank() &&
+                                            customAnonKey.isNotBlank(),
+                                        modifier = Modifier.minimumInteractiveComponentSize().testTag("cloud_config_save_button"),
+                                    ) {
+                                        Text("حفظ وربط الخادم")
+                                    }
+                                    if (uiState.hasCustomCloudConfig) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                customAnonKey = ""
+                                                onClearCloudConfig()
+                                            },
+                                            enabled = !uiState.isAuthBusy,
+                                            modifier = Modifier.minimumInteractiveComponentSize().testTag("cloud_config_clear_button"),
+                                        ) {
+                                            Text("مسح الربط اليدوي")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

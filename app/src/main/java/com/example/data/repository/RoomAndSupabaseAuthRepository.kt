@@ -16,6 +16,7 @@ import com.example.data.remote.RemoteAuthResult
 import com.example.data.remote.RemoteFamilyMembership
 import com.example.data.remote.RemoteInvitation
 import com.example.data.remote.RemoteMemberProfile
+import com.example.data.remote.SupabaseConfig
 import com.example.data.remote.SupabaseGateway
 import com.example.data.sync.CloudSyncEngine
 import com.example.domain.model.AuditOperation
@@ -40,12 +41,17 @@ import com.example.domain.model.SyncOutboxStatus
 import com.example.domain.model.SyncState
 import com.example.domain.repository.CloudAuthAndFamilyRepository
 import com.example.domain.security.InviteCodeHelper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.UUID
 
@@ -56,7 +62,10 @@ class RoomAndSupabaseAuthRepository(
     private val preferencesRepository: PreferencesRepository,
     private val supabaseGateway: SupabaseGateway,
     private val mediaStorage: LocalMediaStorage? = null,
+    private val supabaseConfigState: MutableStateFlow<SupabaseConfig>? = null,
 ) : CloudAuthAndFamilyRepository {
+
+    private val configScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val familySpaceDao = database.familySpaceDao()
     private val userAccountDao = database.userAccountDao()
@@ -81,8 +90,55 @@ class RoomAndSupabaseAuthRepository(
         preferencesRepository = preferencesRepository,
     )
 
+    init {
+        if (supabaseConfigState != null) {
+            configScope.launch {
+                authSessionStore.customCloudEndpointFlow.collect { endpoint ->
+                    supabaseConfigState.value = SupabaseConfig.resolve(endpoint.url, endpoint.anonKey)
+                }
+            }
+        }
+    }
+
     override val isBackendConfigured: Boolean
         get() = supabaseGateway.isConfigured
+
+    override val isBackendConfiguredFlow: Flow<Boolean> =
+        authSessionStore.customCloudEndpointFlow.map { endpoint ->
+            if (supabaseConfigState != null) {
+                val resolved = SupabaseConfig.resolve(endpoint.url, endpoint.anonKey)
+                supabaseConfigState.value = resolved
+                resolved.isConfigured
+            } else {
+                supabaseGateway.isConfigured
+            }
+        }
+
+    override val configuredServerUrl: Flow<String?> =
+        authSessionStore.customCloudEndpointFlow.map { endpoint ->
+            val resolved = SupabaseConfig.resolve(endpoint.url, endpoint.anonKey)
+            resolved.url.takeIf { resolved.isConfigured }
+        }
+
+    override val hasCustomCloudConfigFlow: Flow<Boolean> =
+        authSessionStore.customCloudEndpointFlow.map { endpoint ->
+            endpoint.isPopulated
+        }
+
+    override suspend fun saveCustomCloudConfig(url: String, anonKey: String): Result<Unit> = runCatching {
+        val validationError = SupabaseConfig.validateInputs(url, anonKey)
+        if (validationError != null) {
+            throw IllegalArgumentException(validationError)
+        }
+        val normalized = SupabaseConfig(url = url, anonKey = anonKey).normalized()
+        authSessionStore.saveCustomCloudEndpoint(normalized.url, normalized.anonKey)
+        supabaseConfigState?.value = normalized
+    }
+
+    override suspend fun clearCustomCloudConfig(): Result<Unit> = runCatching {
+        authSessionStore.clearCustomCloudEndpoint()
+        supabaseConfigState?.value = SupabaseConfig.fromBuildConfig()
+    }
 
     override val currentSession: Flow<AuthSession?> = authSessionStore.sessionFlow
 
